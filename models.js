@@ -4,6 +4,9 @@ const sequelize = new Sequelize(
   "postgres://postgres:123456@localhost:5432/postgres",
   {
     logging: false,
+    pool: {
+      acquire: 100 * 1000,
+    },
   }
 );
 

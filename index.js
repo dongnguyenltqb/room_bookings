@@ -2,17 +2,41 @@ const moment = require("moment");
 const { Transaction, QueryTypes } = require("sequelize");
 const models = require("./models");
 models.Instant.authenticate()
-  .then(startProcess)
+  // .then(startProcess)
   .then(startProcessMulti)
   .then(() => process.exit(0))
   .catch((err) => console.log(err));
 
 async function removeCommandFromOrder(order_id) {
-  await models.Bookings.destroy({
-    where: {
-      order_id,
-    },
+  let t = await models.Instant.transaction({
+    isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
   });
+  try {
+    await models.Bookings.destroy(
+      {
+        where: {
+          order_id,
+        },
+      },
+      {
+        transaction: t,
+      }
+    );
+    await t.commit();
+    console.log("delete order", order_id);
+    return true;
+  } catch (err) {
+    console.log(err.message);
+    await t.rollback();
+    return false;
+  }
+}
+async function tryRemoveCommandFromOrder(order_id) {
+  let retry = true;
+  while (retry) {
+    let deleted = await removeCommandFromOrder(order_id);
+    if (deleted) retry = false;
+  }
 }
 
 // return error || sucessful
@@ -77,12 +101,12 @@ async function book(room_id, start_time, end_time, order_id) {
 
 async function startProcess() {
   let startTime = moment().unix();
-  let n = 1000;
+  let n = 100;
   let maxRoomCount = 12;
   let arrayOfPromises = [];
   for (let room_id = 1; room_id <= maxRoomCount; room_id++) {
     for (let i = 0; i < n; i++) {
-      let start_time = moment().unix() + Math.floor(Math.random() * 100000000);
+      let start_time = moment().unix() + Math.floor(Math.random() * 1000000);
       let end_time = start_time + Math.floor(Math.random() * 6000000);
 
       start_time = moment(start_time * 1000).toISOString();
@@ -104,7 +128,7 @@ async function startProcess() {
 async function startProcessMulti() {
   let startTime = moment().unix();
   // n ís the number of order
-  let n = 1000;
+  let n = 5;
   let maxRoomCount = 12;
   let arrayOfNItems = [];
   for (let i = 1; i <= n; i++) arrayOfNItems.push(i);
@@ -115,8 +139,7 @@ async function startProcessMulti() {
       let commands = new Array(maxRoomCount + 1);
       // order include option from multi room
       for (let room_id = 1; room_id <= maxRoomCount; room_id++) {
-        let start_time =
-          moment().unix() + Math.floor(Math.random() * 10000000000);
+        let start_time = moment().unix() + Math.floor(Math.random() * 10000000);
         let end_time = start_time + Math.floor(Math.random() * 6000000);
 
         start_time = moment(start_time * 1000).toISOString();
@@ -130,7 +153,7 @@ async function startProcessMulti() {
       for (let room_id = 1; room_id <= maxRoomCount; room_id++)
         if (commandResults[room_id] !== true) {
           // depend on bussiness
-          await removeCommandFromOrder(order_id);
+          await tryRemoveCommandFromOrder(order_id);
           return false;
         }
       // all command sucessfully
